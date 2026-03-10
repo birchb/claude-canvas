@@ -1,4 +1,34 @@
+# Dependencies
 node_modules/
+canvas/node_modules/
+
+# Temporary and Log Files
 tmp/
 *.log
 .DS_Store
+Thumbs.db
+/tmp/canvas-config-*.json
+/tmp/claude-canvas-pane-id
+
+# Environment Variables and Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE and Editor Configuration
+.vscode/
+.idea/
+*.swp
+*.swo
+.project
+.classpath
+.settings/
+
+# Build and Testing
+dist/
+build/
+coverage/
+.tsbuildinfo
+.nyc_output/
