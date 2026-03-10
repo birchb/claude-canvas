@@ -1,7 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { realpathSync, writeFileSync } from "fs"
+import { realpathSync, writeFileSync, readFileSync } from "fs"
 import { resolve } from "path"
+import { execFileSync } from "child_process"
 
 // ---------------------------------------------------------------------------
 // Canvas types — mirrors canvas/src/canvases/registry.ts plus the 3 originals
@@ -143,16 +144,38 @@ Returns: spawn confirmation with the canvas ID.`,
           // Format: <socket_path>,<session_id>,<window_id>
           let tmuxEnv = process.env.TMUX ?? ""
           if (!tmuxEnv) {
-            tmuxEnv = await $`tmux list-sessions -F '#{socket_path},#{session_id},0' 2>/dev/null`.text()
-              .then(t => t.trim().split("\n")[0] ?? "")
-              .catch(() => "")
+            try {
+              tmuxEnv = execFileSync("/opt/homebrew/bin/tmux", [
+                "list-sessions", "-F", "#{socket_path},#{session_id},0"
+              ], { encoding: "utf8" }).trim().split("\n")[0] ?? ""
+            } catch {
+              try {
+                tmuxEnv = execFileSync("tmux", [
+                  "list-sessions", "-F", "#{socket_path},#{session_id},0"
+                ], { encoding: "utf8" }).trim().split("\n")[0] ?? ""
+              } catch { /* tmux not found — will fail gracefully below */ }
+            }
           }
 
+          // Use execFileSync for spawn — avoids Bun $`...` subshell limitations
+          // and gives us full stderr on failure.
+          const configJson = readFileSync(configFile, "utf8")
+          const spawnArgs = [
+            "run", cliPath, "spawn", args.kind,
+            "--id", id,
+            "--config", configJson,
+            ...scenarioArgs,
+          ]
+
           try {
-            const result = await $`env TMUX=${tmuxEnv} bun run ${cliPath} spawn ${args.kind} --id ${id} --config $(cat ${configFile}) ${scenarioArgs}`.text()
+            const result = execFileSync("/opt/homebrew/bin/bun", spawnArgs, {
+              encoding: "utf8",
+              env: { ...process.env, TMUX: tmuxEnv },
+            })
             return `Canvas '${id}' (${args.kind}) spawned successfully.\n${result.trim()}`
           } catch (err: any) {
-            return `Error spawning canvas '${args.kind}': ${err?.message ?? String(err)}`
+            const stderr = err?.stderr ?? err?.message ?? String(err)
+            return `Error spawning canvas '${args.kind}': ${stderr}`
           }
         },
       }),
