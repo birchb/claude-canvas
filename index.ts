@@ -138,8 +138,18 @@ Returns: spawn confirmation with the canvas ID.`,
           const cliPath = `${canvasDir}/src/cli.ts`
           const scenarioArgs = args.scenario ? ["--scenario", args.scenario] : []
 
+          // Pass TMUX env var explicitly so the CLI subprocess can detect the
+          // tmux session even when OpenCode's shell doesn't inherit it.
+          // Format: <socket_path>,<session_id>,<window_id>
+          let tmuxEnv = process.env.TMUX ?? ""
+          if (!tmuxEnv) {
+            tmuxEnv = await $`tmux list-sessions -F '#{socket_path},#{session_id},0' 2>/dev/null`.text()
+              .then(t => t.trim().split("\n")[0] ?? "")
+              .catch(() => "")
+          }
+
           try {
-            const result = await $`bun run ${cliPath} spawn ${args.kind} --id ${id} --config $(cat ${configFile}) ${scenarioArgs}`.text()
+            const result = await $`env TMUX=${tmuxEnv} bun run ${cliPath} spawn ${args.kind} --id ${id} --config $(cat ${configFile}) ${scenarioArgs}`.text()
             return `Canvas '${id}' (${args.kind}) spawned successfully.\n${result.trim()}`
           } catch (err: any) {
             return `Error spawning canvas '${args.kind}': ${err?.message ?? String(err)}`
