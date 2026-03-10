@@ -18,6 +18,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@opencode-ai/plugin": "^1.2.24",
     "commander": "^14.0.2",
     "ink": "^6.6.0",
     "ink-spinner": "^5.0.0"
