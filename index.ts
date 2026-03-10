@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
+import { realpathSync, writeFileSync } from "fs"
 import { resolve } from "path"
-import { spawnSync } from "child_process"
 
 // ---------------------------------------------------------------------------
 // Canvas types — mirrors canvas/src/canvases/registry.ts plus the 3 originals
@@ -37,39 +37,46 @@ const CANVAS_TYPES = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Resolve the canvas directory relative to this file */
+/**
+ * Resolve the canvas directory relative to this file.
+ * Uses realpathSync to follow symlinks (plugin is loaded via symlink from
+ * ~/.config/opencode/plugins/canvas.ts -> repo/index.ts).
+ */
 function getCanvasDir(): string {
-  return resolve(import.meta.dirname, "canvas")
+  const thisFile = realpathSync(import.meta.filename)
+  return resolve(thisFile, "../canvas")
 }
 
-/** Auto-start a tmux session named 'opencode-canvas' if not already in tmux */
-async function ensureTmux($: any): Promise<void> {
-  const inTmux = !!process.env.TMUX
-  if (inTmux) return
-
-  const sessionName = "opencode-canvas"
-
-  // Check if the session already exists
-  const check = spawnSync("tmux", ["has-session", "-t", sessionName])
-  if (check.status !== 0) {
-    // Session does not exist — create it detached
-    await $`tmux new-session -d -s ${sessionName}`
-    console.log(`[canvas] tmux session '${sessionName}' started`)
-  }
-}
-
-/** Write config JSON to a temp file to avoid shell-escaping issues */
-async function writeConfigFile(id: string, config: string): Promise<string> {
+/**
+ * Write config JSON to a temp file to avoid shell-escaping issues.
+ * Uses fs.writeFileSync for compatibility across Bun/Node contexts.
+ */
+function writeConfigFile(id: string, config: string): string {
   const configFile = `/tmp/canvas-config-${id}.json`
-  await Bun.write(configFile, config)
+  writeFileSync(configFile, config, "utf8")
   return configFile
 }
 
-/** Run a CLI command and return its stdout as a string */
-async function runCli($: any, canvasDir: string, args: string[]): Promise<string> {
-  const cliPath = `${canvasDir}/src/cli.ts`
-  const result = await $`bun run ${cliPath} ${args}`.text()
-  return result.trim()
+/**
+ * Ensure a tmux session exists. Called lazily at spawn time, not at plugin init,
+ * so a missing tmux binary doesn't break plugin load.
+ */
+async function ensureTmux($: any): Promise<void> {
+  if (process.env.TMUX) return  // already inside tmux
+
+  const sessionName = "opencode-canvas"
+  try {
+    // Check if session exists; if not, create it detached
+    await $`/opt/homebrew/bin/tmux has-session -t ${sessionName} 2>/dev/null || /opt/homebrew/bin/tmux new-session -d -s ${sessionName}`.quiet()
+    console.log(`[canvas] tmux session '${sessionName}' ready`)
+  } catch {
+    // tmux may not be at Homebrew path — try bare command
+    try {
+      await $`tmux has-session -t ${sessionName} 2>/dev/null || tmux new-session -d -s ${sessionName}`.quiet()
+    } catch (err: any) {
+      throw new Error(`[canvas] tmux not found. Install with: brew install tmux\n${err?.message ?? ""}`)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -78,9 +85,6 @@ async function runCli($: any, canvasDir: string, args: string[]): Promise<string
 
 export const CanvasPlugin: Plugin = async ({ $ }) => {
   const canvasDir = getCanvasDir()
-
-  // Ensure tmux is available on plugin init
-  await ensureTmux($)
 
   return {
     tool: {
@@ -120,23 +124,21 @@ Returns: spawn confirmation with the canvas ID.`,
             return `Error: unknown canvas type '${args.kind}'. Valid types: ${validIds.join(", ")}`
           }
 
-          let config: string
           try {
-            // Validate JSON
             JSON.parse(args.config)
-            config = args.config
           } catch {
             return `Error: config is not valid JSON. Received: ${args.config}`
           }
 
+          // Ensure tmux is available (lazy — only runs at spawn time)
+          await ensureTmux($)
+
           const id = args.id ?? `${args.kind}-1`
-          const configFile = await writeConfigFile(id, config)
+          const configFile = writeConfigFile(id, args.config)
           const cliPath = `${canvasDir}/src/cli.ts`
+          const scenarioArgs = args.scenario ? ["--scenario", args.scenario] : []
 
           try {
-            // Shell out to CLI — config passed via temp file to avoid escaping issues.
-            // terminal.ts handles the tmux split internally.
-            const scenarioArgs = args.scenario ? ["--scenario", args.scenario] : []
             const result = await $`bun run ${cliPath} spawn ${args.kind} --id ${id} --config $(cat ${configFile}) ${scenarioArgs}`.text()
             return `Canvas '${id}' (${args.kind}) spawned successfully.\n${result.trim()}`
           } catch (err: any) {
@@ -170,7 +172,7 @@ Returns: confirmation that the update was sent.`,
             return `Error: config is not valid JSON. Received: ${args.config}`
           }
 
-          const configFile = await writeConfigFile(`${args.id}-update`, args.config)
+          const configFile = writeConfigFile(`${args.id}-update`, args.config)
           const cliPath = `${canvasDir}/src/cli.ts`
 
           try {
