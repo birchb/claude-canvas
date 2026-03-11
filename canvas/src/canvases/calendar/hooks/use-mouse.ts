@@ -103,13 +103,8 @@ export function useMouse(options: UseMouseOptions = {}): MouseState {
     setRawMode(true);
 
     let buffer = "";
-    let isProcessing = false; // Guard against re-entrancy when emitting passthrough
 
     const handleData = (data: Buffer) => {
-      // Skip if we're already processing (prevents infinite loop from passthrough emit)
-      if (isProcessing) return;
-
-      isProcessing = true;
       buffer += data.toString();
 
       // Try to parse mouse events from buffer
@@ -147,17 +142,10 @@ export function useMouse(options: UseMouseOptions = {}): MouseState {
         buffer = buffer.slice(match.index! + match[0].length);
       }
 
-      // Pass through any remaining non-mouse data to other handlers (e.g., useInput)
-      // This fixes keyboard input being consumed and lost when mouse is active
-      if (buffer.length > 0) {
-        const remaining = Buffer.from(buffer);
-        buffer = "";
-        // Re-emit to stdin so other listeners (like Ink's useInput) can process it
-        // The isProcessing guard prevents us from re-processing this data
-        stdin.emit("data", remaining);
+      // Keep buffer from growing too large (in case of junk data)
+      if (buffer.length > 100) {
+        buffer = buffer.slice(-50);
       }
-
-      isProcessing = false;
     };
 
     stdin.on("data", handleData);
