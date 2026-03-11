@@ -90,21 +90,55 @@ imported by the plugin.
 - All 5 tools available in session tool list
 - `canvas_list` returns all 17 types (confirmed live tool call)
 - `canvas_spawn kanban` opens tmux split pane with kanban board ✅
+- `canvas_spawn calendar` (meeting-picker) opens and renders ✅
+- `canvas_spawn document` (display/edit) opens and renders ✅
+- `canvas_selection` retrieves meeting time from calendar ✅
+- `canvas_content` retrieves document text ✅
+- IPC controller server starts for client-mode canvases ✅
+- tmux mouse mode enabled automatically ✅
 
 ### Not Yet Tested
 - canvas types: pipeline, dashboard, invoice, gantt, org-chart (business)
 - canvas types: hotel, itinerary (travel)
 - canvas types: budget, smart-home, workout (personal)
 - canvas types: playlist (creative), git-diff (development), agent-dashboard (AI)
-- canvas types: calendar, document, flight (original)
+- canvas types: flight (original)
 - IPC round-trip: `canvas_update` (push config to running canvas)
-- IPC round-trip: `canvas_selection` (calendar meeting-picker, flight booking)
-- IPC round-trip: `canvas_content` (document canvas)
 - Edge cases: invalid canvas type, malformed JSON config, tmux not running
 
-### Known Issues
-- Kanban renders but UX/interaction not fully validated
-- `canvas_update`, `canvas_selection`, `canvas_content` untested end-to-end
+---
+
+## Known Upstream Bugs (in `canvas/` directory)
+
+These are bugs in the original PoC code, not in our plugin adapter. They exist
+in `consigcody94/claude-canvas` and should be reported/fixed upstream.
+
+### Calendar (`canvas/src/canvases/calendar.tsx`)
+
+1. **↑/↓ arrow keys don't work** — only ←/→ work for week navigation. The
+   up/down handlers exist in `meeting-picker-view.tsx` lines 344-359 but don't
+   render a visible cursor or respond correctly.
+
+2. **Date shows March 2020** — demo data defaults to old dates instead of
+   parsing config or using current date.
+
+### Document (`canvas/src/canvases/document.tsx`)
+
+1. **Mouse tracking prints garbage** — moving the mouse over the document
+   prints raw escape sequences as text instead of being interpreted as mouse
+   events. The `useMouse` hook in `calendar/hooks/use-mouse.ts` is used but
+   doesn't work correctly in document context.
+
+2. **'m' key doesn't respond** — specific key binding issue in the input
+   handler.
+
+3. **Input buffering issues** — typing "awesome" may produce "awsoe" with
+   letters missing or out of order.
+
+### General
+
+1. **No theme support** — all canvases use hardcoded dark colors. No light
+   mode option exists.
 
 ---
 
@@ -137,6 +171,17 @@ imported by the plugin.
 ### Phase 7 (continue testing)
 - Test one canvas per remaining category
 - Verify IPC round-trip for `canvas_update`, `canvas_selection`, `canvas_content`
+
+### Future Enhancements
+
+**Theme inheritance:** Canvas currently uses hardcoded dark theme colors (see
+`calendar.tsx` line 53: `INK_COLORS`). Add support for OpenCode's current theme
+(light/dark) to be passed to the canvas so it matches the terminal's appearance.
+
+Approach:
+- Pass theme info via `canvas_spawn` config (`theme: "light" | "dark"`)
+- Add `--theme` flag to CLI
+- Canvas components use theme-aware color maps instead of hardcoded values
 - Test edge cases
 
 ### Post-testing
