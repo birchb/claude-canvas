@@ -69,11 +69,14 @@ async function ensureTmux($: any): Promise<void> {
   try {
     // Check if session exists; if not, create it detached
     await $`/opt/homebrew/bin/tmux has-session -t ${sessionName} 2>/dev/null || /opt/homebrew/bin/tmux new-session -d -s ${sessionName}`.quiet()
+    // Enable mouse mode for canvas interaction (click support)
+    await $`/opt/homebrew/bin/tmux set -g mouse on`.quiet()
     console.log(`[canvas] tmux session '${sessionName}' ready`)
   } catch {
     // tmux may not be at Homebrew path — try bare command
     try {
       await $`tmux has-session -t ${sessionName} 2>/dev/null || tmux new-session -d -s ${sessionName}`.quiet()
+      await $`tmux set -g mouse on`.quiet()
     } catch (err: any) {
       throw new Error(`[canvas] tmux not found. Install with: brew install tmux\n${err?.message ?? ""}`)
     }
